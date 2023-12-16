@@ -2,11 +2,13 @@ import os
 import subprocess
 import json
 import re
+from datetime import datetime
+import pytz
 
 EXPORT_DIRECTORY = './export/'
 DIRECTORY = './repo/'
-MESSAGE_LEN_CAP = 50
-INCLUDE_USER_NAME = True
+MESSAGE_LEN_CAP = 50 
+INCLUDE_USER_NAME = False 
 
 def clean(directory):
     print(f"Deleting non-.py files in: {os.path.abspath(directory)}")
@@ -38,23 +40,29 @@ def init(source_directory):
     directories = [item for item in items if os.path.isdir(os.path.join(source_directory, item))]
     # Create these directories in the current working directory
     for directory in directories:
-        directory = './repo/' + directory
+        directory = './repo/' + directory 
         os.makedirs(directory, exist_ok=True)
 
     return directories
 
-def message(user, message, channel, name_map = {}):
+def message(user, message, channel, timestamp = 0, name_map = {}):
 
     def clean_message(message):
         illegal_chars_pattern = r'[@#<>:"\/\\|?*\n\r]+'
         cleaned_message = re.sub(illegal_chars_pattern, '_', message)
-
-        return cleaned_message
+        return cleaned_message 
+    
+    def convert_unix_to_git_date(unix_timestamp):
+        date = datetime.fromtimestamp(float(unix_timestamp), tz=pytz.utc)
+        return date.strftime("%c %z")
 
     user = name_map[user] if user in name_map else user
     directory = DIRECTORY + channel + '/' if channel != '' else DIRECTORY 
     message = clean_message(message)
-    message = f'{user} - {message}' if INCLUDE_USER_NAME else message
+
+    message = f'{user} - {message}' if INCLUDE_USER_NAME else f'{message}'
+    message = '_' if message == '' else message
+
     message = message.replace(':', '_').replace('/', '_')
     message = message[:MESSAGE_LEN_CAP] if len(message) > 100 else message
 
@@ -65,10 +73,17 @@ def message(user, message, channel, name_map = {}):
     with open(file_path, 'w') as file:
         file.write('')
     try:     
-        subprocess.run(['git', '-C', DIRECTORY, 'add',    '.'], check=True)
-        subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.name', user], check=True)
-        subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.email', 'placeholder@example.com'], check=True)
-        subprocess.run(['git', '-C', DIRECTORY, 'commit', '-m', message], check=True)
+        env = os.environ.copy()
+        if timestamp != 0:
+            timestamp = convert_unix_to_git_date(timestamp)
+            git_date = timestamp
+            env['GIT_COMMITTER_DATE'] = git_date
+            env['GIT_AUTHOR_DATE'] = git_date
+
+        subprocess.run(['git', '-C', DIRECTORY, 'add',    '.'], check=True, env = env)
+        subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.name', user], check=True, env = env)
+        subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.email', 'placeholder@example.com'], check=True, env = env)
+        subprocess.run(['git', '-C', DIRECTORY, 'commit', '-m', message], check=True, env = env)
 
     except subprocess.CalledProcessError as e:
         print('SYSTEM LOG: Message skipped')
@@ -84,9 +99,10 @@ def parse_slack_logs(file_path):
         log = {
             'user': message.get('user', ''),
             'message': message.get('text', ''),
-            'channel': channel
+            'channel': channel,
+            'timestamp': message.get('ts', ''),
         }
-        parsed_data.append((log['user'],log['message'],log['channel']))
+        parsed_data.append((log['user'],log['message'],log['channel'], log['timestamp']))
     
     return parsed_data
 

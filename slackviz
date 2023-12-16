@@ -1,0 +1,9 @@
+#!/bin/bash
+
+gource -s 0.1 \
+--font-scale 1 \
+--file-font-size 10 \
+--elasticity 0.1 \
+--camera-mode overview \
+repo
+
