@@ -53,7 +53,7 @@ def message(user, message, channel, timestamp = 0, name_map = {}):
         return cleaned_message 
     
     def convert_unix_to_git_date(unix_timestamp):
-        date = datetime.fromtimestamp(float(unix_timestamp), tz=pytz.utc)
+        date = datetime.fromtimestamp(float(unix_timestamp), tz=pytz.utc) if unix_timestamp != "" else datetime.now()
         return date.strftime("%c %z")
 
     user = name_map[user] if user in name_map else user
@@ -72,6 +72,7 @@ def message(user, message, channel, timestamp = 0, name_map = {}):
     file_path = os.path.join(directory, message)
     with open(file_path, 'w') as file:
         file.write('')
+
     try:     
         env = os.environ.copy()
         if timestamp != 0:
@@ -79,14 +80,17 @@ def message(user, message, channel, timestamp = 0, name_map = {}):
             git_date = timestamp
             env['GIT_COMMITTER_DATE'] = git_date
             env['GIT_AUTHOR_DATE'] = git_date
+            if user == '':
+                return
+            subprocess.run(['git', '-C', DIRECTORY, 'add',    '.'], check=True, env = env)
+            subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.name', user], check=True, env = env)
+            subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.email', 'placeholder@example.com'], check=True, env = env)
+            subprocess.run(['git', '-C', DIRECTORY, 'commit', '-m', message], check=True, env = env)
 
-        subprocess.run(['git', '-C', DIRECTORY, 'add',    '.'], check=True, env = env)
-        subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.name', user], check=True, env = env)
-        subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.email', 'placeholder@example.com'], check=True, env = env)
-        subprocess.run(['git', '-C', DIRECTORY, 'commit', '-m', message], check=True, env = env)
 
     except subprocess.CalledProcessError as e:
-        print('SYSTEM LOG: Message skipped')
+        #print('Slackviz log: invalid message, skipped') 
+        return
 
 
 def parse_slack_logs(file_path):
@@ -127,10 +131,15 @@ def crawl(directory = EXPORT_DIRECTORY):
 
 
 
+
 if __name__ == '__main__':
     clean(DIRECTORY)
     init('./export/')
+    env = os.environ.copy()
+    subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.mail', 'slack@viz.com'], check=True, env = env)
+    subprocess.run(['git', '-C', DIRECTORY, 'config', 'user.name', 'slack viz'], check=True, env = env)
 
     name_map = parse_names(EXPORT_DIRECTORY+ 'users.json')
     for log in crawl('.'):
         message(*log, name_map)
+    print("Conversion complete, please run ./slackviz")
